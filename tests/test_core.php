@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /** In-memory unit checks for HTMLPress; this is not WordPress integration. */
 if (ini_get('zend.assertions') !== '1') { fwrite(STDERR, "Run with: php -d zend.assertions=1 -d assert.exception=1 tests/test_core.php\n"); exit(1); }
 ini_set('assert.exception', '1');
@@ -37,7 +37,7 @@ function wp_insert_post($data,$error=false) { $id=$data['ID']??(count($GLOBALS['
 function wp_delete_post($id,...$args) { unset($GLOBALS['core_posts'][$id],$GLOBALS['core_meta'][$id]); return true; }
 function wp_update_post($data,...$args) { return wp_insert_post(wp_unslash($data)); }
 function wp_unique_post_slug($slug,...$args): string { return $slug; }
-require __DIR__.'/../htmlpress/htmlpress.php';
+require __DIR__.'/../htmlpress.php';
 
 $html = static fn($lang) => '<!doctype html><html><head></head><body>' . $lang . ' \\" raw</body></html>';
 $docs=['pt'=>$html('pt'),'en'=>$html('en'),'es'=>$html('es')];

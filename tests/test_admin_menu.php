@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /** Standalone regression check: navigation must not depend on admin notices. */
 define('ABSPATH', __DIR__ . '/');
 $actions = [];
@@ -14,7 +14,7 @@ function add_submenu_page(...$args) { $GLOBALS['menus'][] = $args; }
 function check($condition, $message) {
     if (!$condition) { throw new RuntimeException($message); }
 }
-require __DIR__ . '/../htmlpress/class-htmlpress-admin.php';
+require __DIR__ . '/../class-htmlpress-admin.php';
 HTMLPress_Admin::init();
 check(!isset($actions['admin_notices']), 'Creation shortcut must not use admin notices.');
 check(isset($actions['admin_menu']), 'Menu hook must be registered.');

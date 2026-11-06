@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /** Regression: reentrant editor probes must not duplicate the admin layout. */
 define('ABSPATH', __DIR__ . '/fixtures/');
 class HTMLPress {
@@ -17,7 +17,7 @@ function admin_url($path) { return '/wp-admin/'.$path; }
 function wp_nonce_field(...$args) {}
 $GLOBALS['test_post'] = (object)['ID'=>7,'post_type'=>'page','post_title'=>'Example'];
 $GLOBALS['header_count'] = 0;
-require __DIR__.'/../htmlpress/class-htmlpress-admin.php';
+require __DIR__.'/../class-htmlpress-admin.php';
 ob_start();
 $first = HTMLPress_Admin::replace_editor(false, $GLOBALS['test_post']);
 $second = HTMLPress_Admin::replace_editor(false, $GLOBALS['test_post']);
