@@ -1,7 +1,12 @@
-﻿# HTMLPress
+# HTMLPress
 
-A WordPress plugin for publishing multilingual pages from complete HTML documents. Requires WordPress 6.5+, PHP 8.1+, and the `finfo` extension. See [`readme.txt`](readme.txt) for installation, usage, and security notes.
+HTMLPress é um plugin para WordPress que publica páginas a partir de documentos HTML completos. Cada página pode ter versões em português, inglês e espanhol; as versões em inglês e espanhol são opcionais.
 
-## Tests
+## Requisitos
 
-Standalone checks: `php -d zend.assertions=1 -d assert.exception=1 tests/test_core.php` and the other `tests/test_*.php` scripts. WordPress integration: `php tests/integration.php /path/to/wp-load.php`.
+- WordPress 6.5 ou superior
+- PHP 8.1 ou superior
+
+## Instalação e uso
+
+Instale e ative o plugin. Depois, acesse **Páginas > Adicionar página HTML** e envie os documentos HTML completos da página. O documento em português é obrigatório; as versões em inglês e espanhol são opcionais.
