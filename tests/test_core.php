@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /** In-memory unit checks for HTMLPress; this is not WordPress integration. */
 if (ini_get('zend.assertions') !== '1') { fwrite(STDERR, "Run with: php -d zend.assertions=1 -d assert.exception=1 tests/test_core.php\n"); exit(1); }
 ini_set('assert.exception', '1');
@@ -37,34 +37,34 @@ function wp_insert_post($data,$error=false) { $id=$data['ID']??(count($GLOBALS['
 function wp_delete_post($id,...$args) { unset($GLOBALS['core_posts'][$id],$GLOBALS['core_meta'][$id]); return true; }
 function wp_update_post($data,...$args) { return wp_insert_post(wp_unslash($data)); }
 function wp_unique_post_slug($slug,...$args): string { return $slug; }
-require __DIR__.'/../htmlpress.php';
+require __DIR__.'/../htmlpress/htmlpress.php';
 
 $html = static fn($lang) => '<!doctype html><html><head></head><body>' . $lang . ' \\" raw</body></html>';
 $docs=['pt'=>$html('pt'),'en'=>$html('en'),'es'=>$html('es')];
-$ids=HTMLPress::save_group(0,'TÃ­tulo editÃ¡vel','pagina-teste',$docs);
+$ids=HTMLPress::save_group(0,'Título editável','pagina-teste',$docs);
 assert(is_array($ids) && array_keys($ids)===['pt','en','es']);
 assert(HTMLPress::group($ids['pt']) && get_post_meta($ids['en'],HTMLPress::HTML,true)===$docs['en']);
 assert(array_map(fn($lang)=>get_post_field('post_name',$ids[$lang]),['pt','en','es'])===['pagina-teste','htmlpress-unit-group-1-en','htmlpress-unit-group-1-es']);
 assert(HTMLPress::url($ids['pt'])==='https://example.test/pagina-teste/' && HTMLPress::url($ids['en'])==='https://example.test/en/pagina-teste/' && HTMLPress::url($ids['es'])==='https://example.test/es/pagina-teste/');
 foreach (['pt'=>'pagina-teste','en'=>'en/pagina-teste','es'=>'es/pagina-teste'] as $lang=>$path) { $wp=new WP(); $wp->request=$path; $wp->query_vars=['name'=>'old','page_id'=>'999']; HTMLPress::route_request($wp); assert(($wp->query_vars['page_id']??'')===(string)$ids[$lang] && !isset($wp->query_vars['name'])); }
 $GLOBALS['core_caps']=['manage_options'=>true,'unfiltered_html'=>true,'edit_pages'=>true,'publish_pages'=>true,'upload_files'=>true,'edit_post'=>true,'delete_post'=>true];
-$before=array_map([HTMLPress::class,'url'],$ids); $updated=HTMLPress::save_group($ids['en'],'Novo tÃ­tulo','ignored',['en'=>$html('EN atual')]);
-assert($updated===$ids && array_map([HTMLPress::class,'url'],$ids)===$before && get_post_field('post_title',$ids['pt'])==='Novo tÃ­tulo' && get_post_meta($ids['en'],HTMLPress::HTML,true)===$html('EN atual'));
+$before=array_map([HTMLPress::class,'url'],$ids); $updated=HTMLPress::save_group($ids['en'],'Novo título','ignored',['en'=>$html('EN atual')]);
+assert($updated===$ids && array_map([HTMLPress::class,'url'],$ids)===$before && get_post_field('post_title',$ids['pt'])==='Novo título' && get_post_meta($ids['en'],HTMLPress::HTML,true)===$html('EN atual'));
 $duplicate=HTMLPress::save_group(0,'Duplicada','pagina-teste',$docs); assert(is_wp_error($duplicate));
-$titleOnly=HTMLPress::save_group($ids['pt'],'SÃ³ tÃ­tulo','ignored',[]); assert($titleOnly===$ids); foreach($ids as $id) assert(get_post_field('post_title',$id)==='SÃ³ tÃ­tulo');
-$old=get_post_meta($ids['pt'],HTMLPress::HTML,true); $bad=HTMLPress::save_group($ids['pt'],'NÃ£o salvar','x',['pt'=>$html('changed'),'en'=>$html('en'),'es'=>'invalid']); assert(is_wp_error($bad) && get_post_meta($ids['pt'],HTMLPress::HTML,true)===$old);
+$titleOnly=HTMLPress::save_group($ids['pt'],'Só título','ignored',[]); assert($titleOnly===$ids); foreach($ids as $id) assert(get_post_field('post_title',$id)==='Só título');
+$old=get_post_meta($ids['pt'],HTMLPress::HTML,true); $bad=HTMLPress::save_group($ids['pt'],'Não salvar','x',['pt'=>$html('changed'),'en'=>$html('en'),'es'=>'invalid']); assert(is_wp_error($bad) && get_post_meta($ids['pt'],HTMLPress::HTML,true)===$old);
 foreach (['manage_options','unfiltered_html','edit_pages','publish_pages','upload_files'] as $cap) { $caps=$GLOBALS['core_caps']; unset($GLOBALS['core_caps'][$cap]); assert(!HTMLPress::can_manage()); $GLOBALS['core_caps']=$caps; }
 $GLOBALS['core_caps']['edit_post']=false; $normal=new WP_Post(99); assert(HTMLPress_Admin::use_editor(true,$normal)===true); assert(HTMLPress_Admin::use_editor(true,get_post($ids['pt']))===false); $GLOBALS['core_caps']['edit_post']=true;
 update_option('show_on_front','page'); update_option('page_on_front',$ids['pt']); assert(HTMLPress::url($ids['pt'])==='https://example.test/' && HTMLPress::url($ids['en'])==='https://example.test/en/' && HTMLPress::url($ids['es'])==='https://example.test/es/');
 foreach(['en'=>$ids['en'],'es'=>$ids['es']] as $lang=>$id) { $wp=new WP(); $wp->request=$lang; HTMLPress::route_request($wp); assert(($wp->query_vars['page_id']??'')===(string)$id); }
 $wp=new WP(); $wp->request='en/unrelated'; $wp->query_vars=['name'=>'unrelated']; HTMLPress::route_request($wp); assert(($wp->query_vars['name']??'')==='unrelated' && !isset($wp->query_vars['page_id']));
-$native=wp_insert_post(['post_type'=>'page','post_status'=>'publish','post_title'=>'native','post_name'=>'native']); $protected=wp_update_post(['ID'=>$ids['pt'],'post_title'=>'intruder','post_name'=>'intruder']); assert($protected===$ids['pt'] && get_post_field('post_title',$ids['pt'])==='SÃ³ tÃ­tulo' && get_post_field('post_name',$ids['pt'])==='pagina-teste');
+$native=wp_insert_post(['post_type'=>'page','post_status'=>'publish','post_title'=>'native','post_name'=>'native']); $protected=wp_update_post(['ID'=>$ids['pt'],'post_title'=>'intruder','post_name'=>'intruder']); assert($protected===$ids['pt'] && get_post_field('post_title',$ids['pt'])==='Só título' && get_post_field('post_name',$ids['pt'])==='pagina-teste');
 $GLOBALS['core_admin']=true; assert(HTMLPress::prevent_managed_removal(null,get_post($ids['pt']))===false);
-$single = HTMLPress::save_group(0, 'Sem traduÃ§Ãµes', 'somente-pt', ['pt'=>$html('PT')]);
+$single = HTMLPress::save_group(0, 'Sem traduções', 'somente-pt', ['pt'=>$html('PT')]);
 assert(is_array($single) && array_keys($single) === ['pt']);
 assert(count(HTMLPress::group($single['pt'])) === 1);
 $singleUrl = HTMLPress::url($single['pt']);
-$withEnglish = HTMLPress::save_group($single['pt'], 'Com inglÃªs', '', ['en'=>$html('EN')]);
+$withEnglish = HTMLPress::save_group($single['pt'], 'Com inglês', '', ['en'=>$html('EN')]);
 assert(array_keys($withEnglish) === ['pt','en'] && $withEnglish['pt'] === $single['pt']);
 assert(HTMLPress::url($single['pt']) === $singleUrl);
 $withSpanish = HTMLPress::save_group($withEnglish['en'], 'Completa', '', ['es'=>$html('ES')]);

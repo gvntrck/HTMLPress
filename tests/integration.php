@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /** Real-WordPress integration checks for HTMLPress. Run: php tests/integration.php /path/to/wp-load.php */
 
 $wp_load = $argv[1] ?? getenv('HTMLPRESS_WP_LOAD');
@@ -7,7 +7,7 @@ if (!$wp_load || !is_file($wp_load)) {
     exit(0);
 }
 require_once $wp_load;
-$plugin = dirname(__DIR__) . '/htmlpress.php';
+$plugin = dirname(__DIR__) . '/htmlpress/htmlpress.php';
 if (!class_exists('HTMLPress')) {
     require_once $plugin;
 }
