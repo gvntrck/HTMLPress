@@ -1,7 +1,7 @@
-﻿<?php
+<?php
 ini_set('zend.assertions','1');
 class WP_Error { public function __construct(...$args) {} }
-require __DIR__.'/../class-htmlpress-document.php';
+require __DIR__.'/../htmlpress/class-htmlpress-document.php';
 $html='<!doctype html><html LANG=x><head><!-- <link rel=canonical> --><template><link rel=canonical></template><script>const x="<link rel=canonical> <html lang=x> </head>";</script><style>.x:after{content:">"}</style><link rel=canonical href=old><link rel="alternate" hreflang="fr" href="old"><link rel=alternate href="feed.xml"><link title="a > b" rel=stylesheet></head><body>body</body></html>';
 $out=HTMLPress_Document::transform($html,'pt-BR','https://example.test/pt',['pt-BR'=>'https://example.test/pt','en'=>'https://example.test/en']);
 assert(substr_count($out,'rel="canonical"')===1);
@@ -10,7 +10,8 @@ assert(strpos($out,'lang="pt-BR"')!==false);
 assert(strpos($out,'const x="<link rel=canonical> <html lang=x> </head>";')!==false);
 assert(strpos($out,'.x:after{content:">"}')!==false);
 assert(strpos($out,'<template><link rel=canonical></template>')!==false);
-assert(substr_count($out,'id="htmlpress-language-switcher"')===1 && strpos($out,'<body><nav')!==false);
+assert(strpos($out,'htmlpress-language-switcher')===false);
+assert(strpos($out,'hreflang="pt-BR"')!==false && strpos($out,'hreflang="en"')!==false && strpos($out,'hreflang="x-default"')!==false);
 $again=HTMLPress_Document::transform($out,'pt-BR','https://example.test/pt',['pt-BR'=>'https://example.test/pt','en'=>'https://example.test/en']);
 assert($again===$out);
 assert(HTMLPress_Document::validate($html)===true);
@@ -23,11 +24,12 @@ assert(substr_count(strtolower(substr($duplicates, 0, strpos($duplicates, '>') +
 assert(strpos($duplicates, 'lang="pt-BR"') !== false);
 $boolean = HTMLPress_Document::transform('<html lang><head></head><body></body></html>', 'en', 'https://x.test/', ['en'=>'https://x.test/']);
 assert(strpos($boolean, '<html lang="en">') !== false);
-$navHtml = '<html><head></head><body><script>"<nav id=htmlpress-language-switcher>decoy</nav>"</script><nav id=htmlpress-language-switcher><a href="keep">old</a></nav><p>keep</p></body></html>';
+$manualBody = '<body><script>"<nav id=htmlpress-language-switcher>decoy</nav>"</script><nav id=htmlpress-language-switcher><a href="keep">manual link</a></nav><p>keep</p></body>';
+$navHtml = '<html><head></head>' . $manualBody . '</html>';
 $navOut = HTMLPress_Document::transform($navHtml, 'en', 'https://x.test/', ['en'=>'https://x.test/', 'es'=>'https://x.test/es']);
-assert(strpos($navOut, '"<nav id=htmlpress-language-switcher>decoy</nav>"') !== false);
-assert(strpos($navOut, '<p>keep</p>') !== false);
-assert(strpos($navOut, 'English') !== false && strpos($navOut, 'Español') !== false);
+assert(strpos($navOut, $manualBody) !== false);
+assert(strpos($navOut, 'English') === false && strpos($navOut, 'Español') === false);
+assert(substr($navOut, strpos($navOut, '<body>'), strpos($navOut, '</body>') + 7 - strpos($navOut, '<body>')) === $manualBody);
 assert(HTMLPress_Document::validate('<template><html><head></head><body></body></html></template>') instanceof WP_Error);
 assert(HTMLPress_Document::validate('<html><body></body><head></head></html>') instanceof WP_Error);
 assert(HTMLPress_Document::validate('<html><head><body></body></html>') instanceof WP_Error);

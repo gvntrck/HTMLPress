@@ -144,7 +144,6 @@ class HTMLPress_Document {
         $edits = [];
         $insideHead = false;
         $headEnd = null;
-        $bodyStart = null;
         $htmlTag = null;
         foreach ($tags as $tag) {
             if ($tag['template'] > 0) continue;
@@ -154,7 +153,6 @@ class HTMLPress_Document {
                 $headEnd = $tag['start'];
                 $insideHead = false;
             }
-            if ($tag['name'] === 'body' && !$tag['closing']) $bodyStart = $tag['end'];
             if ($insideHead && self::linkKind($tag) !== '') $edits[] = [$tag['start'], $tag['end'], ''];
         }
 
@@ -183,46 +181,6 @@ class HTMLPress_Document {
             $metadata .= '<link rel="alternate" hreflang="x-default" href="' . htmlspecialchars($alternates['pt-BR'] ?? $canonical, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '">';
         }
         if ($headEnd !== null) $edits[] = [$headEnd, $headEnd, $metadata];
-
-        $labels = ['pt-br'=>'Português', 'en'=>'English', 'es'=>'Español'];
-        $links = [];
-        foreach ($alternates as $language => $url) {
-            $label = $labels[strtolower($language)] ?? $language;
-            $links[] = '<a lang="' . htmlspecialchars($language, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '" hreflang="' . htmlspecialchars($language, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '" href="' . htmlspecialchars($url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '"' . (strcasecmp($language, $locale) === 0 ? ' aria-current="page"' : '') . '>' . htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</a>';
-        }
-        $nav = count($alternates) > 1 ? '<nav id="htmlpress-language-switcher" aria-label="Idiomas">' . implode(' ', $links) . '</nav>' : '';
-
-        $bodyDepth = 0;
-        $navDepth = 0;
-        $existingNavStart = null;
-        $existingNavEnd = null;
-        foreach ($tags as $tag) {
-            if ($tag['template'] > 0) continue;
-            if ($tag['name'] === 'body') {
-                if (!$tag['closing']) $bodyDepth = 1;
-                else $bodyDepth = 0;
-            }
-            if ($bodyDepth === 0) continue;
-            if ($tag['name'] === 'nav') {
-                if (!$tag['closing'] && $navDepth === 0 && self::attrValue($tag, 'id') === 'htmlpress-language-switcher') {
-                    $existingNavStart = $tag['start'];
-                    $navDepth = 1;
-                } elseif ($navDepth > 0) {
-                    if ($tag['closing']) {
-                        $navDepth--;
-                        if ($navDepth === 0) $existingNavEnd = $tag['end'];
-                    } elseif (!$tag['self_closing']) {
-                        $navDepth++;
-                    }
-                }
-            }
-            if ($existingNavEnd !== null) break;
-        }
-        if ($existingNavStart !== null && $existingNavEnd !== null) {
-            $edits[] = [$existingNavStart, $existingNavEnd, $nav];
-        } elseif ($bodyStart !== null) {
-            $edits[] = [$bodyStart, $bodyStart, $nav];
-        }
 
         usort($edits, static function ($left, $right) { return $right[0] <=> $left[0]; });
         foreach ($edits as [$start, $end, $replacement]) {

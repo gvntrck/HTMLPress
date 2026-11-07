@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /** Real-WordPress integration checks for HTMLPress. Run: php tests/integration.php /path/to/wp-load.php */
 
 $wp_load = $argv[1] ?? getenv('HTMLPRESS_WP_LOAD');
@@ -7,7 +7,7 @@ if (!$wp_load || !is_file($wp_load)) {
     exit(0);
 }
 require_once $wp_load;
-$plugin = dirname(__DIR__) . '/htmlpress.php';
+$plugin = dirname(__DIR__) . '/htmlpress/htmlpress.php';
 if (!class_exists('HTMLPress')) {
     require_once $plugin;
 }
@@ -71,7 +71,8 @@ try {
         wp_set_current_user($editor_id);
         $check(is_wp_error(HTMLPress::save_group(0, 'forbidden', $suffix . '-blocked', ['pt' => $html('pt'), 'en' => $html('en'), 'es' => $html('es')])), 'editor without manage_options/unfiltered_html cannot create managed group');
         $check(!HTMLPress_Admin::use_editor(true, get_post($ids['pt'])) && HTMLPress_Admin::use_editor(true, get_post($normal)), 'managed editor disabled while ordinary page editor remains available');
-        $check(!user_can($editor_id, 'edit_post', $ids['pt']), 'managed page edit capability denied to editor');
+    $check(!user_can($editor_id, 'edit_post', $ids['pt']), 'managed page edit capability denied to editor');
+        $check(!user_can($editor_id, 'delete_post', $ids['pt']), 'managed page deletion capability denied to editor');
         wp_set_current_user($admin[0]->ID);
         $check(HTMLPress_Admin::use_editor(true, get_post($ids['pt'])) === false, 'managed page remains outside the standard editor for managers');
         require_once ABSPATH . 'wp-admin/includes/user.php';
@@ -108,6 +109,17 @@ try {
     $rejected_front = HTMLPress::protect_front_page($ids['en'], 0);
     $check((int) $rejected_front === 0, 'selecting English managed page as front is rejected');
 
+    foreach ($ids as $lang => $id) {
+        $check(wp_trash_post($id) !== false && get_post_status($id) === 'trash', "{$lang} page can be trashed individually");
+        $check(count(HTMLPress::group($id)) === 2, "{$lang} trash leaves sibling languages in group");
+        if ($lang === 'en') {
+            $duplicate_translation = HTMLPress::save_group($ids['pt'], 'blocked duplicate', $slug, ['en' => $html('duplicate')]);
+            $check(is_wp_error($duplicate_translation), 'trashed translation is not silently duplicated');
+        }
+        $check(wp_untrash_post($id) !== false && get_post_status($id) === 'draft', "{$lang} page restores to draft");
+        $check(get_post_field('post_content', $id) === $html($lang) && get_post_field('post_name', $id) === $slug, "{$lang} page content and slug survive trash restoration");
+    }
+
     update_option('show_on_front', 'posts'); update_option('page_on_front', 0);
     update_option('show_on_front', 'posts'); update_option('page_on_front', 0);
     $wp = new WP(); $wp->request = 'es'; $wp->query_vars = [];
@@ -122,6 +134,9 @@ try {
         $root_group = [];
     }
     wp_delete_post($root_normal, true);
+    $check(wp_delete_post($ids['pt'], true) !== false && !get_post($ids['pt']), 'Portuguese page can be permanently deleted individually');
+    $check(count(HTMLPress::group($ids['en'])) === 2, 'permanent Portuguese deletion leaves siblings grouped');
+    $check(is_array(HTMLPress::save_group($ids['en'], 'after PT deletion', $slug, ['en' => $html('en-edited')])), 'surviving translation remains editable without PT');
 } finally {
     if ($normal) wp_delete_post($normal, true);
     if ($child) wp_delete_post($child, true);

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /** In-memory unit checks for HTMLPress; this is not WordPress integration. */
 if (ini_get('zend.assertions') !== '1') { fwrite(STDERR, "Run with: php -d zend.assertions=1 -d assert.exception=1 tests/test_core.php\n"); exit(1); }
 ini_set('assert.exception', '1');
@@ -12,6 +12,7 @@ class WP { public string $request=''; public array $query_vars=[]; }
 $GLOBALS['core_posts'] = []; $GLOBALS['core_meta'] = []; $GLOBALS['core_options'] = ['permalink_structure'=>'/%postname%/','show_on_front'=>'posts','page_on_front'=>0]; $GLOBALS['core_caps'] = array_fill_keys(['manage_options','unfiltered_html','edit_pages','publish_pages','upload_files'], true); $GLOBALS['core_actions']=[]; $GLOBALS['core_filters']=[]; $GLOBALS['core_admin']=false;
 function add_action($hook,$cb,...$args): void { $GLOBALS['core_actions'][$hook][]=$cb; }
 function add_filter($hook,$cb,...$args): void { $GLOBALS['core_filters'][$hook][]=$cb; }
+function apply_filters($hook,$value,...$args) { foreach ($GLOBALS['core_filters'][$hook]??[] as $cb) $value=$cb($value,...$args); return $value; }
 function __($text,...$args): string { return $text; }
 function current_user_can($cap,...$args): bool { if ($cap==='edit_post' || $cap==='delete_post') return user_can(1,$cap,...$args); return (bool)($GLOBALS['core_caps'][$cap] ?? false); }
 function user_can($id,$cap,...$args): bool { if (($cap==='edit_post'||$cap==='delete_post') && isset($args[0]) && HTMLPress::is_managed((int)$args[0])) return HTMLPress::managed_caps([], $cap, (int)$id, [$args[0]]) !== ['do_not_allow']; return (bool)($GLOBALS['core_caps'][$cap] ?? false); }
@@ -33,11 +34,14 @@ function get_post($id) { return $GLOBALS['core_posts'][$id] ?? null; }
 function get_post_field($field,$id) { return get_post($id)->{$field} ?? ''; }
 function get_posts($args=[]): array { $out=[]; foreach ($GLOBALS['core_posts'] as $p) { if (isset($args['post_type']) && $args['post_type']!=='any' && $p->post_type!==$args['post_type']) continue; if (isset($args['post_status']) && $args['post_status']!=='any' && !in_array($p->post_status,(array)$args['post_status'],true)) continue; if (isset($args['name']) && $p->post_name!==$args['name']) continue; if (isset($args['meta_key']) && isset($args['meta_value']) && get_post_meta($p->ID,$args['meta_key'],true)!=$args['meta_value']) continue; if (isset($args['meta_key']) && ($args['meta_compare']??'')==='EXISTS' && get_post_meta($p->ID,$args['meta_key'],true)==='') continue; $out[]=$p; } return ($args['fields']??'')==='ids' ? array_map(fn($p)=>$p->ID,$out) : $out; }
 function get_page_by_path($path,...$args) { foreach ($GLOBALS['core_posts'] as $p) if ($p->post_type==='page' && $p->post_name===$path) return $p; return null; }
-function wp_insert_post($data,$error=false) { $id=$data['ID']??(count($GLOBALS['core_posts'])+1); $data=HTMLPress::protect_post_data($data,$data); $p=$GLOBALS['core_posts'][$id]??new WP_Post($id); foreach ($data as $k=>$v) if(property_exists($p,$k)) $p->$k=$v; $GLOBALS['core_posts'][$id]=$p; return $id; }
+function wp_insert_post($data,$error=false) { $id=$data['ID']??(empty($GLOBALS['core_posts'])?1:max(array_keys($GLOBALS['core_posts']))+1); $data=HTMLPress::protect_post_data($data,$data); $p=$GLOBALS['core_posts'][$id]??new WP_Post($id); foreach ($data as $k=>$v) if(property_exists($p,$k)) $p->$k=$v; $GLOBALS['core_posts'][$id]=$p; return $id; }
 function wp_delete_post($id,...$args) { unset($GLOBALS['core_posts'][$id],$GLOBALS['core_meta'][$id]); return true; }
 function wp_update_post($data,...$args) { return wp_insert_post(wp_unslash($data)); }
+function wp_trash_post($id) { $post=get_post($id); if (!$post || apply_filters('pre_trash_post',null,$post)!==null) return false; return wp_update_post(['ID'=>$id,'post_status'=>'trash']); }
+function wp_untrash_post($id) { return wp_update_post(['ID'=>$id,'post_status'=>'draft']); }
+function wp_delete_managed($id) { $post=get_post($id); if (!$post || apply_filters('pre_delete_post',null,$post)!==null) return false; return wp_delete_post($id,true); }
 function wp_unique_post_slug($slug,...$args): string { return $slug; }
-require __DIR__.'/../htmlpress.php';
+require __DIR__.'/../htmlpress/htmlpress.php';
 
 $html = static fn($lang) => '<!doctype html><html><head></head><body>' . $lang . ' \\" raw</body></html>';
 $docs=['pt'=>$html('pt'),'en'=>$html('en'),'es'=>$html('es')];
@@ -59,7 +63,22 @@ update_option('show_on_front','page'); update_option('page_on_front',$ids['pt'])
 foreach(['en'=>$ids['en'],'es'=>$ids['es']] as $lang=>$id) { $wp=new WP(); $wp->request=$lang; HTMLPress::route_request($wp); assert(($wp->query_vars['page_id']??'')===(string)$id); }
 $wp=new WP(); $wp->request='en/unrelated'; $wp->query_vars=['name'=>'unrelated']; HTMLPress::route_request($wp); assert(($wp->query_vars['name']??'')==='unrelated' && !isset($wp->query_vars['page_id']));
 $native=wp_insert_post(['post_type'=>'page','post_status'=>'publish','post_title'=>'native','post_name'=>'native']); $protected=wp_update_post(['ID'=>$ids['pt'],'post_title'=>'intruder','post_name'=>'intruder']); assert($protected===$ids['pt'] && get_post_field('post_title',$ids['pt'])==='Só título' && get_post_field('post_name',$ids['pt'])==='pagina-teste');
-$GLOBALS['core_admin']=true; assert(HTMLPress::prevent_managed_removal(null,get_post($ids['pt']))===false);
+$GLOBALS['core_admin']=false;
+foreach (['pt'=>$ids['pt'],'en'=>$ids['en'],'es'=>$ids['es']] as $lang=>$id) {
+ assert(count(HTMLPress::group($id))===3);
+ assert(wp_trash_post($id)!==false); assert(get_post($id)->post_status==='trash');
+ assert(count(HTMLPress::group($id))===2);
+ assert(wp_untrash_post($id)!==false); assert(get_post($id)->post_status==='draft');
+}
+unset($GLOBALS['core_caps']['manage_options']); assert(!user_can(1,'delete_post',$ids['pt'])); $GLOBALS['core_caps']['manage_options']=true;
+assert(wp_delete_managed($ids['pt'])===true && !get_post($ids['pt']));
+assert(count(HTMLPress::group($ids['en']))===2);
+$afterPtRemoval=HTMLPress::save_group($ids['en'],'Ainda editável','ignored',['en'=>$html('EN após PT')]);
+assert(is_array($afterPtRemoval) && $afterPtRemoval['en']===$ids['en']);
+assert(wp_trash_post($ids['en'])!==false);
+$duplicateTranslation=HTMLPress::save_group($ids['es'],'Não duplicar','ignored',['en'=>$html('EN duplicado')]);
+assert(is_wp_error($duplicateTranslation) && $duplicateTranslation->code==='htmlpress_translation_trashed');
+assert(wp_untrash_post($ids['en'])!==false);
 $single = HTMLPress::save_group(0, 'Sem traduções', 'somente-pt', ['pt'=>$html('PT')]);
 assert(is_array($single) && array_keys($single) === ['pt']);
 assert(count(HTMLPress::group($single['pt'])) === 1);

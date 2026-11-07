@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HTMLPress
  * Description: Páginas HTML completas em português, inglês e espanhol.
- * Version: 1.2.1
+ * Version: 1.2.6
  * Requires PHP: 8.1
  * Requires at least: 6.5
  * Text Domain: htmlpress
@@ -13,6 +13,7 @@ if (!defined('ABSPATH')) {
 }
 
 require_once __DIR__ . '/class-htmlpress-document.php';
+require_once __DIR__ . '/class-htmlpress-bundle.php';
 require_once __DIR__ . '/class-htmlpress-admin.php';
 
 final class HTMLPress
@@ -36,8 +37,6 @@ final class HTMLPress
 		add_filter('pre_update_option_show_on_front', [self::class, 'protect_front_mode'], 10, 2);
 		add_filter('pre_update_option_page_for_posts', [self::class, 'protect_posts_page'], 10, 2);
 		add_action('admin_init', [self::class, 'normalize_front_page']);
-		add_filter('pre_trash_post', [self::class, 'prevent_managed_removal'], 10, 2);
-		add_filter('pre_delete_post', [self::class, 'prevent_managed_removal'], 10, 2);
 
 		HTMLPress_Admin::init();
 	}
@@ -81,7 +80,7 @@ final class HTMLPress
 			}
 		}
 
-		return isset($documents['pt']) ? $documents : [];
+		return $documents;
 	}
 
 	public static function public_slug(int $id): string
@@ -106,7 +105,7 @@ final class HTMLPress
 	}
 
 	/** @return array<string, int>|WP_Error */
-	public static function save_group(int $id, string $title, string $slug, array $documents): array|WP_Error
+	public static function save_group(int $id, string $title, string $slug, array $documents, ?callable $before_commit = null): array|WP_Error
 	{
 		if (!self::can_manage()) {
 			return new WP_Error('htmlpress_forbidden', __('Permissão insuficiente.', 'htmlpress'));
@@ -127,7 +126,8 @@ final class HTMLPress
 					return new WP_Error('htmlpress_forbidden', __('Sem permissão para editar todos os documentos.', 'htmlpress'));
 				}
 			}
-			$slug = self::public_slug($old['pt']->ID);
+			$anchor = reset($old);
+			$slug = self::public_slug($anchor->ID);
 		} elseif (self::slug_collides($slug)) {
 			return new WP_Error('htmlpress_slug_conflict', __('Slug ou caminho já utilizado/reservado.', 'htmlpress'));
 		}
@@ -147,7 +147,17 @@ final class HTMLPress
 				return $valid;
 			}
 		}
-		$group_id = $id ? (string) get_post_meta($old['pt']->ID, self::GROUP, true) : wp_generate_uuid4();
+		$anchor = $id ? reset($old) : null;
+		$group_id = $id ? (string) get_post_meta($anchor->ID, self::GROUP, true) : wp_generate_uuid4();
+		if ($id && array_diff(array_keys($documents), array_keys($old))) {
+			$trashed = get_posts(['post_type' => 'page', 'post_status' => 'trash', 'numberposts' => -1, 'meta_key' => self::GROUP, 'meta_value' => $group_id]);
+			foreach ($trashed as $page) {
+				$language = (string) get_post_meta($page->ID, self::LANG, true);
+				if (isset($documents[$language])) {
+					return new WP_Error('htmlpress_translation_trashed', __('Restaure a tradução na lixeira antes de substituí-la.', 'htmlpress'));
+				}
+			}
+		}
 		if (!$id && !self::acquire_creation_lock($group_id)) {
 			return new WP_Error('htmlpress_busy', __('Outra criação HTMLPress está em andamento.', 'htmlpress'));
 		}
@@ -215,6 +225,13 @@ final class HTMLPress
 			}
 			$result[$language] = (int) $saved;
 		}
+		if ($before_commit) {
+			$commit = $before_commit($group_id, $result);
+			if (is_wp_error($commit) || $commit === false) {
+				self::rollback($created, $snapshots);
+				return is_wp_error($commit) ? $commit : new WP_Error('htmlpress_bundle_failed', __('Falha ao armazenar a pasta de assets.', 'htmlpress'));
+			}
+		}
 		} finally {
 			self::$writing = false;
 			if (!$id) {
@@ -227,6 +244,12 @@ final class HTMLPress
 	public static function route_request(WP $wp): void
 	{
 		$path = trim((string) $wp->request, '/');
+		if (preg_match('~^(?:(en|es)/)?(?:(.+)/)?_htmlpress-assets/(pt|en|es)/(.+)$~', $path, $asset)) {
+			$owner_language = $asset[1] ?: 'pt';
+			$page = !empty($asset[2]) ? self::find_public_page($asset[2], $owner_language) : get_post(self::front_id_for_language($owner_language));
+			if ($page && self::group($page->ID)) self::serve_asset($page->ID, $asset[3], $asset[4]);
+			return;
+		}
 		$language = 'pt';
 		$slug = $path;
 		if (preg_match('~^(en|es)(?:/(.*))?$~', $path, $matches)) {
@@ -246,6 +269,27 @@ final class HTMLPress
 			'page_id' => (string) $page->ID,
 			'post_type' => 'page',
 		];
+	}
+
+	private static function serve_asset(int $id, string $language, string $path): void
+	{
+		if (!self::can_serve_assets() || !HTMLPress_Bundle::path($path)) self::not_found();
+		$group = (string) get_post_meta($id, self::GROUP, true);
+		$documents = self::group($id);
+		if (!isset($documents[$language]) || $documents[$language]->post_status !== 'publish') self::not_found();
+		$uploads = wp_upload_dir();
+		$file = HTMLPress_Bundle::read($uploads['basedir'] . '/htmlpress', $group, $language, $path);
+		if (!$file) self::not_found();
+		header('X-Content-Type-Options: nosniff');
+		header('Content-Type: ' . $file['mime']);
+		header('Cache-Control: public, max-age=3600');
+		echo $file['bytes'];
+		exit;
+	}
+
+	private static function can_serve_assets(): bool
+	{
+		return ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET';
 	}
 
 	public static function render(): void
@@ -281,6 +325,12 @@ final class HTMLPress
 		}
 		$html = (string) get_post_meta($page->ID, self::HTML, true);
 		$canonical = self::url($page->ID);
+		$uploads = wp_upload_dir();
+		$group_id = (string) get_post_meta($page->ID, self::GROUP, true);
+		if (HTMLPress_Bundle::read($uploads['basedir'] . '/htmlpress', $group_id, $language, 'index.html')) {
+			$base = trailingslashit($canonical) . '_htmlpress-assets/' . $language . '/';
+			$html = preg_replace('~(<head\b[^>]*>)~i', '$1<base href="' . esc_url($base) . '">', $html, 1);
+		}
 		status_header(200);
 		header('Content-Type: text/html; charset=UTF-8');
 		echo HTMLPress_Document::transform($html, $language === 'pt' ? 'pt-BR' : $language, $canonical, $alternates);
@@ -303,11 +353,16 @@ final class HTMLPress
 			if (in_array($data['post_status'] ?? '', ['trash', 'auto-draft'], true)) {
 				return $data;
 			}
-			$data['post_name'] = $managed->post_name;
+			$restoring = $managed->post_status === 'trash';
+			if (!$restoring) {
+				$data['post_name'] = $managed->post_name;
+			}
 			$data['post_parent'] = $managed->post_parent;
 			$data['post_content'] = $managed->post_content;
 			$data['post_title'] = $managed->post_title;
-			$data['post_status'] = $managed->post_status;
+			if (!$restoring) {
+				$data['post_status'] = $managed->post_status;
+			}
 			return $data;
 		}
 		if (($data['post_type'] ?? '') === 'page' && !in_array($data['post_status'] ?? '', ['auto-draft', 'trash'], true)) {
@@ -517,20 +572,6 @@ final class HTMLPress
 		} finally {
 			self::$writing = $was_writing;
 		}
-	}
-
-	public static function prevent_managed_removal($check, WP_Post $post)
-	{
-		if (self::$writing) {
-			return $check;
-		}
-		if (self::is_managed($post->ID)) {
-			if (is_admin()) {
-				self::settings_error('managed_removal', __('Documentos HTMLPress não podem ser enviados à lixeira ou excluídos individualmente.', 'htmlpress'));
-			}
-			return false;
-		}
-		return $check;
 	}
 
 	private static function normal_root_conflict(int $front_id): bool
