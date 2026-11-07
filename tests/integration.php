@@ -7,7 +7,7 @@ if (!$wp_load || !is_file($wp_load)) {
     exit(0);
 }
 require_once $wp_load;
-$plugin = dirname(__DIR__) . '/htmlpress/htmlpress.php';
+$plugin = dirname(__DIR__) . '/htmlpress.php';
 if (!class_exists('HTMLPress')) {
     require_once $plugin;
 }

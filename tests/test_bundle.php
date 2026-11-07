@@ -2,8 +2,8 @@
 if (ini_get('zend.assertions') !== '1') { throw new RuntimeException('Run with -d zend.assertions=1 -d assert.exception=1'); }
 class WP_Error {}
 function is_wp_error($value): bool { return $value instanceof WP_Error; }
-require __DIR__ . '/../htmlpress/class-htmlpress-document.php';
-require __DIR__ . '/../htmlpress/class-htmlpress-bundle.php';
+require __DIR__ . '/../class-htmlpress-document.php';
+require __DIR__ . '/../class-htmlpress-bundle.php';
 if (!function_exists('wp_mkdir_p')) { function wp_mkdir_p($path) { return is_dir($path) || mkdir($path, 0777, true); } }
 assert(HTMLPress_Bundle::path('css/site.css'));
 assert(!HTMLPress_Bundle::path('../secret.css'));

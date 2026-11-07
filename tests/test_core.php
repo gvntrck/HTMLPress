@@ -41,7 +41,7 @@ function wp_trash_post($id) { $post=get_post($id); if (!$post || apply_filters('
 function wp_untrash_post($id) { return wp_update_post(['ID'=>$id,'post_status'=>'draft']); }
 function wp_delete_managed($id) { $post=get_post($id); if (!$post || apply_filters('pre_delete_post',null,$post)!==null) return false; return wp_delete_post($id,true); }
 function wp_unique_post_slug($slug,...$args): string { return $slug; }
-require __DIR__.'/../htmlpress/htmlpress.php';
+require __DIR__.'/../htmlpress.php';
 
 $html = static fn($lang) => '<!doctype html><html><head></head><body>' . $lang . ' \\" raw</body></html>';
 $docs=['pt'=>$html('pt'),'en'=>$html('en'),'es'=>$html('es')];

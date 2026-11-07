@@ -1,7 +1,7 @@
 <?php
 ini_set('zend.assertions','1');
 class WP_Error { public function __construct(...$args) {} }
-require __DIR__.'/../htmlpress/class-htmlpress-document.php';
+require __DIR__.'/../class-htmlpress-document.php';
 $html='<!doctype html><html LANG=x><head><!-- <link rel=canonical> --><template><link rel=canonical></template><script>const x="<link rel=canonical> <html lang=x> </head>";</script><style>.x:after{content:">"}</style><link rel=canonical href=old><link rel="alternate" hreflang="fr" href="old"><link rel=alternate href="feed.xml"><link title="a > b" rel=stylesheet></head><body>body</body></html>';
 $out=HTMLPress_Document::transform($html,'pt-BR','https://example.test/pt',['pt-BR'=>'https://example.test/pt','en'=>'https://example.test/en']);
 assert(substr_count($out,'rel="canonical"')===1);
