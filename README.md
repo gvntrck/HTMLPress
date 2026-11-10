@@ -2,6 +2,8 @@
 
 Publique páginas HTML completas no WordPress, com suporte a versões em português, inglês e espanhol. Envie um arquivo HTML ou um pacote ZIP com imagens, CSS e JavaScript diretamente pelo painel.
 
+![Tela de criação de uma página HTML no WordPress, com campos de título, slug e arquivos por idioma](Captura.png)
+
 ## Recursos
 
 - Publicação de HTML completo sem alterar o editor padrão do WordPress.
