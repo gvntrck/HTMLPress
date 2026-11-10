@@ -78,27 +78,31 @@ final class HTMLPress_Admin {
 		echo '<input type="hidden" name="action" value="htmlpress_save"><input type="hidden" name="id" value="' . esc_attr((string) $id) . '">';
 		wp_nonce_field('htmlpress_save');
 		$title = !$id && $pt->post_title === 'Auto Draft' ? '' : $pt->post_title;
-		echo '<p><label for="htmlpress-title">' . esc_html__('Título compartilhado', 'htmlpress') . '</label><br><input class="regular-text" id="htmlpress-title" name="title" value="' . esc_attr($title) . '" required></p>';
-		if (!$id) {
-			echo '<p><label for="htmlpress-slug">' . esc_html__('Slug público', 'htmlpress') . '</label><br><input class="regular-text" id="htmlpress-slug" name="slug" required></p>';
-		} else {
-			echo '<p>' . esc_html__('Slug (não editável)', 'htmlpress') . ': <code>' . esc_html(HTMLPress::public_slug($id)) . '</code></p><ul>';
+		echo '<table class="form-table" role="presentation"><tbody>';
+		echo '<tr><th scope="row"><label for="htmlpress-title">' . esc_html__('Título compartilhado', 'htmlpress') . '</label></th><td><input class="regular-text" id="htmlpress-title" name="title" value="' . esc_attr($title) . '" required></td></tr>';
+		echo '<tr><th scope="row"><label for="htmlpress-slug">' . esc_html__('Slug público', 'htmlpress') . '</label></th><td><input class="regular-text" id="htmlpress-slug" name="slug" value="' . esc_attr($id ? HTMLPress::public_slug($id) : '') . '" aria-describedby="htmlpress-slug-help" required>';
+		echo '<p id="htmlpress-slug-help" class="description">' . esc_html__('Compartilhado entre os idiomas. Alterá-lo muda as URLs públicas, exceto as da página inicial. Links antigos não são redirecionados automaticamente; atualize os links no HTML.', 'htmlpress') . '</p>';
+		echo '</td></tr></tbody></table>';
+		if ($id) {
+			echo '<h2>' . esc_html__('Páginas por idioma', 'htmlpress') . '</h2><ul>';
 			foreach (['pt' => 'Português', 'en' => 'English', 'es' => 'Español'] as $lang => $label) {
 				if (!isset($group[$lang])) continue;
 				echo '<li><a href="' . esc_url(HTMLPress::url((int) $group[$lang]->ID)) . '" target="_blank" rel="noopener">' . esc_html($label) . '</a></li>';
 			}
 			echo '</ul>';
 		}
+		echo '<h2>' . esc_html__('Conteúdo por idioma', 'htmlpress') . '</h2>';
 		echo '<p id="htmlpress-upload-help" class="description">' . esc_html__('Envie um HTML ou um ZIP por idioma. No ZIP, inclua index.html e suas pastas de imagens, CSS e JS. Limites: HTML de 2 MB; ZIP de 10 MB, até 100 arquivos de 2 MB cada (10 MB descompactados). Publique somente conteúdo confiável.', 'htmlpress') . '</p>';
-		if ($id) echo '<p class="description">' . esc_html__('Deixe o campo vazio para manter o conteúdo atual. Um novo envio substitui o conteúdo e os assets daquele idioma.', 'htmlpress') . '</p>';
+		if ($id) echo '<p id="htmlpress-replace-help" class="description">' . esc_html__('Deixe o campo vazio para manter o conteúdo atual. Um novo envio substitui o conteúdo e os assets daquele idioma.', 'htmlpress') . '</p>';
+		echo '<table class="form-table" role="presentation"><tbody>';
 		foreach (['pt' => 'Português (Brasil)', 'en' => 'English', 'es' => 'Español'] as $lang => $label) {
 			$name = 'html_' . $lang;
 			$required = !$id && $lang === 'pt';
 			$caption = $required ? __('%s (obrigatório)', 'htmlpress') : __('%s (opcional)', 'htmlpress');
-			echo '<p><label for="' . esc_attr($name) . '">' . esc_html(sprintf($caption, $label)) . '</label><br>';
-			echo '<input type="file" id="' . esc_attr($name) . '" name="' . esc_attr($name) . '" accept=".html,.htm,.zip" aria-describedby="htmlpress-upload-help"' . ($required ? ' required' : '') . '></p>';
+			echo '<tr><th scope="row"><label for="' . esc_attr($name) . '">' . esc_html(sprintf($caption, $label)) . '</label></th><td>';
+			echo '<input type="file" id="' . esc_attr($name) . '" name="' . esc_attr($name) . '" accept=".html,.htm,.zip" aria-describedby="htmlpress-upload-help' . ($id ? ' htmlpress-replace-help' : '') . '"' . ($required ? ' required' : '') . '></td></tr>';
 		}
-		echo '<p><button class="button button-primary">' . esc_html__('Salvar página HTML', 'htmlpress') . '</button></p></form></div>';
+		echo '</tbody></table><p class="submit"><button type="submit" class="button button-primary">' . esc_html__('Salvar página HTML', 'htmlpress') . '</button></p></form></div>';
 	}
 
 	public static function save(): void {
@@ -122,7 +126,7 @@ final class HTMLPress_Admin {
 
 		$title = sanitize_text_field(wp_unslash($_POST['title'] ?? ''));
 		$slug = sanitize_title(wp_unslash($_POST['slug'] ?? ''));
-		if (!$id && (!$title || !$slug)) {
+		if ($title === '' || $slug === '') {
 			self::fail(__('Título e slug são obrigatórios.', 'htmlpress'));
 		}
 		if (!class_exists('finfo')) self::fail(__('A validação MIME não está disponível no servidor.', 'htmlpress'));

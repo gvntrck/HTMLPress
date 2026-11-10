@@ -1,11 +1,11 @@
 HTMLPress
 =========
 
-Requisitos: WordPress 6.5 ou superior, PHP 8.1 ou superior e extensão finfo. Para enviar ZIPs de conteúdo, habilite também a extensão PHP zip (ZipArchive). Ative links permanentes amigáveis. Instale o ZIP em Plugins > Adicionar plugin > Enviar plugin e ative-o. Versão 1.2.6.
+Requisitos: WordPress 6.5 ou superior, PHP 8.1 ou superior e extensão finfo. Para enviar ZIPs de conteúdo, habilite também a extensão PHP zip (ZipArchive). Ative links permanentes amigáveis. Instale o ZIP em Plugins > Adicionar plugin > Enviar plugin e ative-o. Versão 1.3.1.
 
 Crie em Páginas > Adicionar página HTML. Informe título, slug e o conteúdo PT-BR obrigatório. Há apenas um campo por idioma: selecione um HTML individual (.html ou .htm) ou um ZIP com index.html e suas pastas de imagens, CSS e JS. O ZIP pode conter os arquivos diretamente ou dentro de uma única pasta principal. EN e ES são opcionais: somente os idiomas enviados geram páginas. Cada HTML deve ser UTF-8 e conter um documento completo com <html>, <head> e <body> e seus fechamentos. Ao clicar em “Salvar página HTML”, as versões enviadas são publicadas imediatamente. Você pode adicionar traduções depois, sem alterar IDs e URLs existentes. Links visíveis entre idiomas devem ser incluídos no próprio HTML; o plugin mantém os metadados SEO de idiomas publicados.
 
-Para editar, acesse Páginas > [página] > Editar em qualquer versão. Deixe o campo vazio para manter o conteúdo daquele idioma. Um novo HTML ou ZIP substitui o conteúdo e os assets anteriores daquele idioma; IDs e URLs são preservados. Caminhos relativos das pastas dentro do ZIP são preservados. Limites: 2 MB por HTML individual; ZIP de até 10 MB, com até 100 arquivos de 2 MB cada e 10 MB descompactados por idioma. Os limites PHP de upload e POST também se aplicam.
+Para editar, acesse Páginas > [página] > Editar em qualquer versão. Deixe o campo de arquivo vazio para manter o conteúdo daquele idioma. Um novo HTML ou ZIP substitui o conteúdo e os assets anteriores daquele idioma; IDs são preservados. O slug público pode ser editado e é compartilhado entre os idiomas: alterá-lo atualiza as URLs, exceto as da página inicial. Slugs duplicados ou reservados são recusados. Links antigos não são redirecionados automaticamente; atualize os links no HTML. Caminhos relativos das pastas dentro do ZIP são preservados. Limites: 2 MB por HTML individual; ZIP de até 10 MB, com até 100 arquivos de 2 MB cada e 10 MB descompactados por idioma. Os limites PHP de upload e POST também se aplicam.
 
 Para páginas que não são a página inicial, as URLs do trio são /slug/, /en/slug/ e /es/slug/.
 

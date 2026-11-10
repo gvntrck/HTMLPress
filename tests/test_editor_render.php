@@ -31,10 +31,26 @@ if (!$first || !$second || $GLOBALS['header_count'] !== 1 || substr_count($outpu
 if (substr_count($output, 'type="file"') !== 3 || substr_count($output, 'accept=".html,.htm,.zip"') !== 3 || strpos($output, 'bundle_') !== false) {
     throw new RuntimeException('Expected one HTML/ZIP upload per language, not separate asset inputs.');
 }
+if (!preg_match('/<input[^>]*id="htmlpress-slug"[^>]*>/', $output, $slugInput)
+    || strpos($slugInput[0], 'name="slug"') === false
+    || strpos($slugInput[0], 'value="' . ($GLOBALS['test_new'] ? '' : 'example') . '"') === false
+    || preg_match('/\b(readonly|disabled)\b/', $slugInput[0])) {
+    throw new RuntimeException('Expected an editable public slug, prefilled when editing.');
+}
 preg_match_all('/<input type="file"[^>]*>/', $output, $uploads);
 foreach ($uploads[0] as $index => $input) {
     if ((strpos($input, ' required') !== false) !== ($GLOBALS['test_new'] && $index === 0)) {
         throw new RuntimeException('Only Portuguese is required on a new page; all replacements are optional.');
     }
+    $help = 'aria-describedby="htmlpress-upload-help' . ($GLOBALS['test_new'] ? '' : ' htmlpress-replace-help') . '"';
+    if (strpos($input, $help) === false) {
+        throw new RuntimeException('Upload guidance must be associated with each file input.');
+    }
+}
+if (substr_count($output, '<table class="form-table" role="presentation">') !== 2
+    || strpos($output, '<h2>Conteúdo por idioma</h2>') === false
+    || (strpos($output, '<h2>Páginas por idioma</h2>') !== false) === $GLOBALS['test_new']
+    || strpos($output, '<button type="submit" class="button button-primary">') === false) {
+    throw new RuntimeException('Expected native WordPress form groups and an explicit save action.');
 }
 echo "editor render checks passed\n";

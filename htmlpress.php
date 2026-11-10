@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HTMLPress
  * Description: Páginas HTML completas em português, inglês e espanhol.
- * Version: 1.2.6
+ * Version: 1.3.1
  * Requires PHP: 8.1
  * Requires at least: 6.5
  * Text Domain: htmlpress
@@ -127,8 +127,12 @@ final class HTMLPress
 				}
 			}
 			$anchor = reset($old);
-			$slug = self::public_slug($anchor->ID);
-		} elseif (self::slug_collides($slug)) {
+			if ($slug === '') {
+				$slug = self::public_slug($anchor->ID);
+			}
+		}
+		$changing_slug = !$id || $slug !== self::public_slug($anchor->ID);
+		if ($changing_slug && self::slug_collides($slug)) {
 			return new WP_Error('htmlpress_slug_conflict', __('Slug ou caminho já utilizado/reservado.', 'htmlpress'));
 		}
 
@@ -158,10 +162,10 @@ final class HTMLPress
 				}
 			}
 		}
-		if (!$id && !self::acquire_creation_lock($group_id)) {
+		if ($changing_slug && !self::acquire_creation_lock($group_id)) {
 			return new WP_Error('htmlpress_busy', __('Outra criação HTMLPress está em andamento.', 'htmlpress'));
 		}
-		if (!$id && self::slug_collides($slug)) {
+		if ($changing_slug && self::slug_collides($slug)) {
 			self::release_creation_lock($group_id);
 			return new WP_Error('htmlpress_slug_conflict', __('Slug ou caminho já utilizado/reservado.', 'htmlpress'));
 		}
@@ -199,7 +203,7 @@ final class HTMLPress
 			$saved = wp_insert_post($post, true);
 			if (is_wp_error($saved)) {
 				self::rollback($created, $snapshots);
-				if (!$id) {
+				if ($changing_slug) {
 					self::release_creation_lock($group_id);
 				}
 				return $saved;
@@ -218,7 +222,7 @@ final class HTMLPress
 				|| (string) get_post_meta($saved, self::SLUG, true) !== $slug
 				|| (array_key_exists($language, $documents) && (string) get_post_meta($saved, self::HTML, true) !== $documents[$language])) {
 				self::rollback($created, $snapshots);
-				if (!$id) {
+				if ($changing_slug) {
 					self::release_creation_lock($group_id);
 				}
 				return new WP_Error('htmlpress_save_failed', __('Falha ao salvar metadados HTMLPress.', 'htmlpress'));
@@ -234,7 +238,7 @@ final class HTMLPress
 		}
 		} finally {
 			self::$writing = false;
-			if (!$id) {
+			if ($changing_slug) {
 				self::release_creation_lock($group_id);
 			}
 		}
