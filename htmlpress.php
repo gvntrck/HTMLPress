@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: HTMLPress
- * Description: Páginas HTML completas em português, inglês e espanhol.
- * Version: 1.3.1
+ * Description: Páginas HTML e PHP em português, inglês e espanhol, com assets e integração ao WordPress.
+ * Version: 1.4.0
  * Requires PHP: 8.1
  * Requires at least: 6.5
  * Text Domain: htmlpress
@@ -13,6 +13,7 @@ if (!defined('ABSPATH')) {
 }
 
 require_once __DIR__ . '/class-htmlpress-document.php';
+require_once __DIR__ . '/class-htmlpress-php.php';
 require_once __DIR__ . '/class-htmlpress-bundle.php';
 require_once __DIR__ . '/class-htmlpress-admin.php';
 
@@ -22,6 +23,7 @@ final class HTMLPress
 	public const LANG = '_htmlpress_lang';
 	public const HTML = '_htmlpress_html';
 	public const SLUG = '_htmlpress_slug';
+	public const TYPE = '_htmlpress_type';
 
 	private const LANGUAGES = ['pt', 'en', 'es'];
 	private static bool $writing = false;
@@ -30,6 +32,7 @@ final class HTMLPress
 	{
 		add_action('parse_request', [self::class, 'route_request']);
 		add_action('template_redirect', [self::class, 'render'], 0);
+		add_filter('template_include', [self::class, 'render_php']);
 		add_filter('page_link', [self::class, 'page_link'], 10, 2);
 		add_filter('wp_insert_post_data', [self::class, 'protect_post_data'], 10, 2);
 		add_filter('map_meta_cap', [self::class, 'managed_caps'], 10, 4);
@@ -50,6 +53,14 @@ final class HTMLPress
 		}
 
 		return true;
+	}
+
+	public static function can_upload_php(): bool
+	{
+		return self::can_manage() && current_user_can('edit_themes')
+			&& (!is_multisite() || is_super_admin())
+			&& !(defined('DISALLOW_FILE_EDIT') && DISALLOW_FILE_EDIT)
+			&& !(defined('DISALLOW_FILE_MODS') && DISALLOW_FILE_MODS);
 	}
 
 	public static function is_managed(int $id): bool
@@ -105,7 +116,7 @@ final class HTMLPress
 	}
 
 	/** @return array<string, int>|WP_Error */
-	public static function save_group(int $id, string $title, string $slug, array $documents, ?callable $before_commit = null): array|WP_Error
+	public static function save_group(int $id, string $title, string $slug, array $documents, ?callable $before_commit = null, array $types = []): array|WP_Error
 	{
 		if (!self::can_manage()) {
 			return new WP_Error('htmlpress_forbidden', __('Permissão insuficiente.', 'htmlpress'));
@@ -146,7 +157,14 @@ final class HTMLPress
 			if (!is_string($documents[$language])) {
 				return new WP_Error('htmlpress_invalid_document', __('Documento inválido.', 'htmlpress'));
 			}
-			$valid = HTMLPress_Document::validate($documents[$language]);
+			$type = $types[$language] ?? 'html';
+			if (!in_array($type, ['html', 'php'], true)) {
+				return new WP_Error('htmlpress_invalid_type', __('Formato inválido.', 'htmlpress'));
+			}
+			if ($type === 'php' && !self::can_upload_php()) {
+				return new WP_Error('htmlpress_php_forbidden', __('Sem permissão para enviar código PHP. Verifique as permissões de edição de código do WordPress.', 'htmlpress'));
+			}
+			$valid = $type === 'php' ? HTMLPress_PHP::validate($documents[$language]) : HTMLPress_Document::validate($documents[$language]);
 			if (is_wp_error($valid)) {
 				return $valid;
 			}
@@ -187,6 +205,7 @@ final class HTMLPress
 						self::LANG => get_post_meta($existing->ID, self::LANG, true),
 						self::SLUG => get_post_meta($existing->ID, self::SLUG, true),
 						self::HTML => get_post_meta($existing->ID, self::HTML, true),
+						self::TYPE => get_post_meta($existing->ID, self::TYPE, true),
 					],
 				];
 			}
@@ -216,11 +235,13 @@ final class HTMLPress
 			update_post_meta($saved, self::SLUG, $slug);
 			if (array_key_exists($language, $documents)) {
 				update_post_meta($saved, self::HTML, wp_slash((string) $documents[$language]));
+				update_post_meta($saved, self::TYPE, $types[$language] ?? 'html');
 			}
 			if ((string) get_post_meta($saved, self::GROUP, true) !== $group_id
 				|| (string) get_post_meta($saved, self::LANG, true) !== $language
 				|| (string) get_post_meta($saved, self::SLUG, true) !== $slug
-				|| (array_key_exists($language, $documents) && (string) get_post_meta($saved, self::HTML, true) !== $documents[$language])) {
+				|| (array_key_exists($language, $documents) && ((string) get_post_meta($saved, self::HTML, true) !== $documents[$language]
+					|| get_post_meta($saved, self::TYPE, true) !== ($types[$language] ?? 'html')))) {
 				self::rollback($created, $snapshots);
 				if ($changing_slug) {
 					self::release_creation_lock($group_id);
@@ -281,6 +302,7 @@ final class HTMLPress
 		$group = (string) get_post_meta($id, self::GROUP, true);
 		$documents = self::group($id);
 		if (!isset($documents[$language]) || $documents[$language]->post_status !== 'publish') self::not_found();
+		if (post_password_required($documents[$language])) self::not_found();
 		$uploads = wp_upload_dir();
 		$file = HTMLPress_Bundle::read($uploads['basedir'] . '/htmlpress', $group, $language, $path);
 		if (!$file) self::not_found();
@@ -296,17 +318,30 @@ final class HTMLPress
 		return ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET';
 	}
 
-	public static function render(): void
+	public static function render_php(string $template): string
+	{
+		self::render(true);
+		return $template;
+	}
+
+	public static function render(bool $php = false): void
 	{
 		$page = get_queried_object();
 		if (!$page instanceof WP_Post || $page->post_type !== 'page' || !self::is_managed($page->ID)) {
 			return;
 		}
+		// Dynamic pages wait until template_include so WooCommerce and redirect hooks run.
+		if ((get_post_meta($page->ID, self::TYPE, true) === 'php') !== $php) return;
 		if ($page->post_status !== 'publish') {
 			if (!is_preview() || !current_user_can('edit_post', $page->ID)) {
 				self::not_found();
 			}
 			nocache_headers();
+		}
+		if (post_password_required($page)) {
+			nocache_headers();
+			echo get_the_password_form($page);
+			exit;
 		}
 		$canonical = self::url($page->ID);
 		$requested = wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
@@ -331,11 +366,27 @@ final class HTMLPress
 		$canonical = self::url($page->ID);
 		$uploads = wp_upload_dir();
 		$group_id = (string) get_post_meta($page->ID, self::GROUP, true);
-		if (HTMLPress_Bundle::read($uploads['basedir'] . '/htmlpress', $group_id, $language, 'index.html')) {
-			$base = trailingslashit($canonical) . '_htmlpress-assets/' . $language . '/';
+		$is_php = get_post_meta($page->ID, self::TYPE, true) === 'php';
+		$base = trailingslashit($canonical) . '_htmlpress-assets/' . $language . '/';
+		if ($is_php) {
+			nocache_headers();
+			try {
+				$html = HTMLPress_PHP::execute($html, ['assets_url' => $base, 'page_url' => $canonical], [
+					ABSPATH, $uploads['basedir'], defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : ABSPATH,
+					$_SERVER['DOCUMENT_ROOT'] ?? ABSPATH,
+				]);
+			} catch (Throwable $error) {
+				// Never expose uploaded source, paths or exception messages to visitors.
+				error_log('HTMLPress PHP page ' . $page->ID . ' failed (' . get_class($error) . ').');
+				status_header(500);
+				wp_die(esc_html__('Não foi possível carregar esta página.', 'htmlpress'), 'HTMLPress', ['response' => 500]);
+			}
+		}
+		if (($is_php && HTMLPress_Bundle::hasAssets($uploads['basedir'] . '/htmlpress', $group_id, $language))
+			|| (!$is_php && HTMLPress_Bundle::read($uploads['basedir'] . '/htmlpress', $group_id, $language, 'index.html'))) {
 			$html = preg_replace('~(<head\b[^>]*>)~i', '$1<base href="' . esc_url($base) . '">', $html, 1);
 		}
-		status_header(200);
+		if (!$is_php) status_header(200);
 		header('Content-Type: text/html; charset=UTF-8');
 		echo HTMLPress_Document::transform($html, $language === 'pt' ? 'pt-BR' : $language, $canonical, $alternates);
 		exit;

@@ -7,6 +7,7 @@ if ($GLOBALS['test_new']) $_GET = ['post_type' => 'page', 'htmlpress' => '1'];
 class HTMLPress {
     public static function is_managed($id) { return !$GLOBALS['test_new']; }
     public static function can_manage() { return true; }
+    public static function can_upload_php() { return ($GLOBALS['argv'][2] ?? '') !== 'no-php'; }
     public static function group($id) { return ['pt'=>$GLOBALS['test_post']]; }
     public static function public_slug($id) { return 'example'; }
     public static function url($id) { return 'https://example.test/example/'; }
@@ -28,7 +29,8 @@ $output = ob_get_clean();
 if (!$first || !$second || $GLOBALS['header_count'] !== 1 || substr_count($output, '<form ') !== 1) {
     throw new RuntimeException('Editor layout was rendered more than once.');
 }
-if (substr_count($output, 'type="file"') !== 3 || substr_count($output, 'accept=".html,.htm,.zip"') !== 3 || strpos($output, 'bundle_') !== false) {
+$accept = HTMLPress::can_upload_php() ? '.html,.htm,.php,.zip' : '.html,.htm,.zip';
+if (substr_count($output, 'type="file"') !== 3 || substr_count($output, 'accept="' . $accept . '"') !== 3 || strpos($output, 'bundle_') !== false) {
     throw new RuntimeException('Expected one HTML/ZIP upload per language, not separate asset inputs.');
 }
 if (!preg_match('/<input[^>]*id="htmlpress-slug"[^>]*>/', $output, $slugInput)

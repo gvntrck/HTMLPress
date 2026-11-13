@@ -3,6 +3,7 @@ if (ini_get('zend.assertions') !== '1') { throw new RuntimeException('Run with -
 class WP_Error {}
 function is_wp_error($value): bool { return $value instanceof WP_Error; }
 require __DIR__ . '/../class-htmlpress-document.php';
+require __DIR__ . '/../class-htmlpress-php.php';
 require __DIR__ . '/../class-htmlpress-bundle.php';
 if (!function_exists('wp_mkdir_p')) { function wp_mkdir_p($path) { return is_dir($path) || mkdir($path, 0777, true); } }
 assert(HTMLPress_Bundle::path('css/site.css'));
@@ -18,6 +19,7 @@ assert(!HTMLPress_Bundle::validAsset('main.js', ''));
 $root = sys_get_temp_dir() . '/htmlpress-' . bin2hex(random_bytes(5));
 assert(HTMLPress_Bundle::store($root, '12345678-1234-1234-1234-123456789abc', 'en', ['index.html' => ['bytes' => '<html>', 'mime' => 'text/html; charset=utf-8'], 'css/site.css' => ['bytes' => 'body{}', 'mime' => 'text/css; charset=utf-8']]));
 assert(HTMLPress_Bundle::read($root, '12345678-1234-1234-1234-123456789abc', 'en', 'css/site.css')['bytes'] === 'body{}');
+assert(HTMLPress_Bundle::hasAssets($root, '12345678-1234-1234-1234-123456789abc', 'en'));
 assert(HTMLPress_Bundle::store($root, '12345678-1234-1234-1234-123456789abc', 'en', ['css/site.css' => ['bytes' => 'body{color:red}', 'mime' => 'text/css; charset=utf-8']]));
 assert(HTMLPress_Bundle::read($root, '12345678-1234-1234-1234-123456789abc', 'en', 'css/site.css')['bytes'] === 'body{color:red}');
 assert(HTMLPress_Bundle::store($root, '12345678-1234-1234-1234-123456789abc', 'en', ['index.html' => ['bytes' => '<html>', 'mime' => 'text/html; charset=utf-8']]));
@@ -30,19 +32,20 @@ rmdir($root);
 assert(HTMLPress_Bundle::store($root, '12345678-1234-1234-1234-123456789abc', 'pt', ['index.html' => ['bytes' => '<html>']]));
 assert(HTMLPress_Bundle::store($root, '12345678-1234-1234-1234-123456789abc', 'pt', []));
 assert(HTMLPress_Bundle::read($root, '12345678-1234-1234-1234-123456789abc', 'pt', 'index.html') === null);
+assert(!HTMLPress_Bundle::hasAssets($root, '12345678-1234-1234-1234-123456789abc', 'pt'));
 $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
 foreach ($it as $entry) $entry->isDir() ? rmdir($entry->getPathname()) : unlink($entry->getPathname());
 rmdir($root);
 
 $html = '<!doctype html><html><head></head><body>Test</body></html>';
 $archive = sys_get_temp_dir() . '/htmlpress-zip-' . bin2hex(random_bytes(5)) . '.zip';
-$checkZip = static function (array $entries, bool $valid) use ($archive): array|false {
+$checkZip = static function (array $entries, bool $valid, bool $allow_php = false) use ($archive): array|false {
     $zip = new ZipArchive();
     assert($zip->open($archive, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true);
     foreach ($entries as $path => $bytes) $zip->addFromString($path, $bytes);
     $zip->close();
     try {
-        $files = HTMLPress_Bundle::readZip($archive);
+        $files = HTMLPress_Bundle::readZip($archive, $allow_php);
         assert(($files !== false) === $valid);
         return $files;
     } finally { unlink($archive); }
@@ -54,6 +57,19 @@ assert(isset($files['index.html'], $files['css/site.css']) && !isset($files['pro
 $checkZip(['index.html' => $html, '../bad.css' => 'bad'], false);
 $checkZip(['index.html' => $html, '/bad.css' => 'bad'], false);
 $checkZip(['index.html' => $html, 'run.php' => '<?php'], false);
+$php = '<?php echo "products";';
+$checkZip(['index.php'=>$php], false);
+$files = $checkZip(['index.php'=>$php, 'css/site.css'=>'body{}', 'js/app.js'=>'console.log(1)'], true, true);
+assert($files['index.php']['bytes'] === $php);
+$files = $checkZip(['project/index.php'=>$php, 'project/img/test.png'=>'image'], true, true);
+assert(isset($files['index.php'], $files['img/test.png']));
+$checkZip(['index.php'=>$php, 'helper.php'=>'<?php echo 1;'], false, true);
+$checkZip(['index.php'=>$php, 'nested/index.php'=>$php], false, true);
+$checkZip(['index.php'=>$php, 'index.html'=>$html], false, true);
+$checkZip(['index.php'=>'<?php invalid syntax'], false, true);
+$checkZip(['index.php'=>$php, '../bad.css'=>'x'], false, true);
+$checkZip(['index.php'=>$php, '.user.ini'=>'x'], false, true);
+$checkZip(['index.html'=>$html, 'x.php.css'=>'body{}'], true);
 $checkZip(['index.html' => 'invalid'], false);
 $checkZip(['main.js' => 'console.log(1)'], false);
 $checkZip(['index.html' => $html, 'big.js' => str_repeat('x', HTMLPress_Bundle::MAX_FILE_SIZE + 1)], false);

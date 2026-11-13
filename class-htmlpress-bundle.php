@@ -15,12 +15,12 @@ final class HTMLPress_Bundle {
 		'mp3' => 'audio/mpeg', 'mp4' => 'video/mp4', 'webm' => 'video/webm', 'pdf' => 'application/pdf',
 	];
 
-	public static function path(string $path): bool {
+	public static function path(string $path, bool $allow_php = false): bool {
 		return $path !== '' && strlen($path) <= 240 && !str_contains($path, "\\")
 			&& !str_contains($path, "\0") && !str_starts_with($path, '/')
 			&& !preg_match('~(?:^|/)\.{1,2}(?:/|$)|[<>:"|?*]|%(?:2e|2f|5c)~i', $path)
 			&& !preg_match('~(?:^|/)\.[^/]*$~', $path)
-			&& !preg_match('~(?:^|/)[^/]+\.php[0-9s]*$~i', $path);
+			&& ($allow_php || !preg_match('~(?:^|/)[^/]+\.php[0-9s]*$~i', $path));
 	}
 
 	public static function mime(string $path): ?string {
@@ -87,8 +87,16 @@ final class HTMLPress_Bundle {
 		return is_string($bytes) && strlen($bytes) <= self::MAX_FILE_SIZE ? ['bytes' => $bytes, 'mime' => self::mime($path)] : null;
 	}
 
+	public static function hasAssets(string $root, string $group, string $language): bool {
+		if (!preg_match('/^[a-f0-9-]{36}$/i', $group) || !in_array($language, ['pt', 'en', 'es'], true)) return false;
+		$root = realpath($root);
+		$base = $root === false ? false : realpath($root . DIRECTORY_SEPARATOR . $group . DIRECTORY_SEPARATOR . $language);
+		return $root !== false && $base !== false && str_starts_with($base, $root . DIRECTORY_SEPARATOR)
+			&& is_dir($base) && (new FilesystemIterator($base, FilesystemIterator::SKIP_DOTS))->valid();
+	}
+
 	/** Read bounded entries without extracting untrusted archive paths. */
-	public static function readZip(string $filename): array|false {
+	public static function readZip(string $filename, bool $allow_php = false): array|false {
 		if (!class_exists('ZipArchive')) return false;
 		$zip = new ZipArchive();
 		if ($zip->open($filename, ZipArchive::RDONLY) !== true) return false;
@@ -99,22 +107,24 @@ final class HTMLPress_Bundle {
 				$stat = $zip->statIndex($i);
 				if (!$stat) return false;
 				$path = $stat['name'];
-				if (!self::path(rtrim($path, '/'))) return false;
+				if (!self::path(rtrim($path, '/'), $allow_php)) return false;
 				if (!$zip->getExternalAttributesIndex($i, $os, $attributes)) return false;
 				if ($os === ZipArchive::OPSYS_UNIX && (($attributes >> 16) & 0170000) === 0120000) return false;
 				if (str_ends_with($path, '/')) continue;
+				$is_php = $allow_php && basename($path) === 'index.php';
 				$size = $stat['size'];
 				$total += $size;
 				if ($size < 1 || $size > self::MAX_FILE_SIZE || $total > self::MAX_TOTAL_SIZE
-					|| count($files) >= self::MAX_FILES || isset($files[$path]) || !self::mime($path)) return false;
+					|| count($files) >= self::MAX_FILES || isset($files[$path]) || (!$is_php && !self::mime($path))) return false;
 				$bytes = $zip->getFromIndex($i, self::MAX_FILE_SIZE + 1);
-				if (!is_string($bytes) || strlen($bytes) !== $size || !self::validAsset($path, $bytes)) return false;
+				if (!is_string($bytes) || strlen($bytes) !== $size || (!$is_php && !self::validAsset($path, $bytes))) return false;
+				if ($is_php && is_wp_error(HTMLPress_PHP::validate($bytes))) return false;
 				if (in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['html', 'htm'], true)
 					&& is_wp_error(HTMLPress_Document::validate($bytes))) return false;
 				$files[$path] = ['bytes' => $bytes, 'mime' => self::mime($path)];
 			}
 			// Accept both ZIP contents and a ZIP containing one enclosing project folder.
-			if (!isset($files['index.html']) && $files) {
+			if (!isset($files['index.html']) && !isset($files['index.php']) && $files) {
 				$prefix = explode('/', array_key_first($files))[0] . '/';
 				$normalized = [];
 				foreach ($files as $path => $file) {
@@ -123,7 +133,12 @@ final class HTMLPress_Bundle {
 				}
 				$files = $normalized;
 			}
-			return isset($files['index.html']) ? $files : false;
+			// One entry point only; PHP helpers are deliberately not public assets.
+			if (isset($files['index.php']) === isset($files['index.html'])) return false;
+			foreach ($files as $path => $file) {
+				if ($path !== 'index.php' && !self::mime($path)) return false;
+			}
+			return isset($files['index.html']) || ($allow_php && isset($files['index.php'])) ? $files : false;
 		} finally {
 			$zip->close();
 		}

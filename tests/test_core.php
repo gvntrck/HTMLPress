@@ -17,6 +17,8 @@ function __($text,...$args): string { return $text; }
 function current_user_can($cap,...$args): bool { if ($cap==='edit_post' || $cap==='delete_post') return user_can(1,$cap,...$args); return (bool)($GLOBALS['core_caps'][$cap] ?? false); }
 function user_can($id,$cap,...$args): bool { if (($cap==='edit_post'||$cap==='delete_post') && isset($args[0]) && HTMLPress::is_managed((int)$args[0])) return HTMLPress::managed_caps([], $cap, (int)$id, [$args[0]]) !== ['do_not_allow']; return (bool)($GLOBALS['core_caps'][$cap] ?? false); }
 function is_admin(): bool { return $GLOBALS['core_admin']; }
+function is_multisite(): bool { return $GLOBALS['core_multisite'] ?? false; }
+function is_super_admin(): bool { return $GLOBALS['core_super_admin'] ?? false; }
 function sanitize_text_field($s): string { return trim(strip_tags($s)); }
 function sanitize_title($s): string { return strtolower(trim(preg_replace('/[^a-z0-9-]+/i','-', $s), '-')); }
 function get_option($key) { return $GLOBALS['core_options'][$key] ?? false; }
@@ -106,4 +108,30 @@ foreach (['en', 'pagina-teste', 'native'] as $conflict) {
  assert(HTMLPress::public_slug($renamed['pt']) === 'novo-caminho');
 }
 assert(HTMLPress::save_group($renamed['pt'], 'Mesmo slug', 'novo-caminho', []) === $renamed);
+$php = '<?php echo home_url("/products/"); ?><html><head></head><body>Produtos</body></html>';
+$GLOBALS['core_caps']['edit_themes'] = false;
+assert(is_wp_error(HTMLPress::save_group(0, 'PHP bloqueado', 'php-blocked', ['pt'=>$php], null, ['pt'=>'php'])));
+$GLOBALS['core_caps']['edit_themes'] = true;
+assert(HTMLPress::can_upload_php());
+$GLOBALS['core_multisite'] = true;
+assert(!HTMLPress::can_upload_php());
+$GLOBALS['core_super_admin'] = true;
+assert(HTMLPress::can_upload_php());
+$GLOBALS['core_multisite'] = false;
+$dynamic = HTMLPress::save_group(0, 'PHP', 'php-page', ['pt'=>$php, 'en'=>$html('en')], null, ['pt'=>'php']);
+assert(is_array($dynamic));
+assert(get_post_meta($dynamic['pt'], HTMLPress::TYPE, true) === 'php');
+assert(get_post_meta($dynamic['pt'], HTMLPress::HTML, true) === $php);
+assert(get_post_meta($dynamic['en'], HTMLPress::TYPE, true) === 'html');
+assert(is_wp_error(HTMLPress::save_group($dynamic['pt'], 'Invalid', '', ['pt'=>'<?php broken syntax'], null, ['pt'=>'php'])));
+assert(get_post_meta($dynamic['pt'], HTMLPress::HTML, true) === $php);
+assert(HTMLPress::save_group($dynamic['pt'], 'Title only', '', []) === $dynamic);
+assert(get_post_meta($dynamic['pt'], HTMLPress::TYPE, true) === 'php');
+$failed = HTMLPress::save_group($dynamic['pt'], 'Rollback', '', ['pt'=>$html('replacement')], static fn() => false);
+assert(is_wp_error($failed));
+assert(get_post_meta($dynamic['pt'], HTMLPress::TYPE, true) === 'php');
+assert(get_post_meta($dynamic['pt'], HTMLPress::HTML, true) === $php);
+assert(HTMLPress::save_group($dynamic['pt'], 'HTML again', '', ['pt'=>$html('static')]) === $dynamic);
+assert(get_post_meta($dynamic['pt'], HTMLPress::TYPE, true) === 'html');
+assert(is_wp_error(HTMLPress::save_group(0, 'Bad type', 'bad-type', ['pt'=>$php], null, ['pt'=>'unknown'])));
 echo "HTMLPress in-memory core checks passed\n";

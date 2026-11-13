@@ -23,8 +23,8 @@ final class HTMLPress_Admin {
 		}
 		add_submenu_page(
 			'edit.php?post_type=page',
-			__('Adicionar página HTML', 'htmlpress'),
-			__('Adicionar página HTML', 'htmlpress'),
+			__('Adicionar página HTML/PHP', 'htmlpress'),
+			__('Adicionar página HTML/PHP', 'htmlpress'),
 			'manage_options',
 			'post-new.php?post_type=page&htmlpress=1'
 		);
@@ -70,9 +70,9 @@ final class HTMLPress_Admin {
 			wp_die(esc_html__('O grupo HTMLPress está incompleto.', 'htmlpress'));
 		}
 		$pt = $group['pt'] ?? $post;
-		echo '<div class="wrap"><h1>' . esc_html($id ? __('Editar página HTML', 'htmlpress') : __('Nova página HTML', 'htmlpress')) . '</h1>';
+		echo '<div class="wrap"><h1>' . esc_html($id ? __('Editar página HTMLPress', 'htmlpress') : __('Nova página HTMLPress', 'htmlpress')) . '</h1>';
 		if (isset($_GET['htmlpress_saved'])) {
-			echo '<div class="notice notice-success"><p>' . esc_html__('Página HTML salva.', 'htmlpress') . '</p></div>';
+			echo '<div class="notice notice-success"><p>' . esc_html__('Página HTMLPress salva.', 'htmlpress') . '</p></div>';
 		}
 		echo '<form method="post" enctype="multipart/form-data" action="' . esc_url(admin_url('admin-post.php')) . '">';
 		echo '<input type="hidden" name="action" value="htmlpress_save"><input type="hidden" name="id" value="' . esc_attr((string) $id) . '">';
@@ -92,7 +92,10 @@ final class HTMLPress_Admin {
 			echo '</ul>';
 		}
 		echo '<h2>' . esc_html__('Conteúdo por idioma', 'htmlpress') . '</h2>';
-		echo '<p id="htmlpress-upload-help" class="description">' . esc_html__('Envie um HTML ou um ZIP por idioma. No ZIP, inclua index.html e suas pastas de imagens, CSS e JS. Limites: HTML de 2 MB; ZIP de 10 MB, até 100 arquivos de 2 MB cada (10 MB descompactados). Publique somente conteúdo confiável.', 'htmlpress') . '</p>';
+		echo '<p id="htmlpress-upload-help" class="description">' . esc_html__('Envie HTML, PHP ou ZIP por idioma. No ZIP, inclua apenas uma entrada: index.html ou index.php, com imagens, CSS e JS. Limites: arquivo de 2 MB; ZIP de 10 MB, até 100 arquivos de 2 MB cada (10 MB descompactados).', 'htmlpress') . '</p>';
+		echo '<p class="description">' . esc_html__('Atenção: PHP executa código no servidor com acesso ao WordPress e ao banco de dados. Envie somente código revisado e confiável. Não inclua wp-load.php; WordPress e plugins ativos já estão carregados. Não são aceitos arquivos PHP auxiliares no ZIP.', 'htmlpress') . '</p>';
+		$accept = HTMLPress::can_upload_php() ? '.html,.htm,.php,.zip' : '.html,.htm,.zip';
+		if (!HTMLPress::can_upload_php()) echo '<p class="description">' . esc_html__('Envio de PHP bloqueado pelas permissões ou configurações de edição de código do WordPress. HTML e ZIP estático continuam disponíveis.', 'htmlpress') . '</p>';
 		if ($id) echo '<p id="htmlpress-replace-help" class="description">' . esc_html__('Deixe o campo vazio para manter o conteúdo atual. Um novo envio substitui o conteúdo e os assets daquele idioma.', 'htmlpress') . '</p>';
 		echo '<table class="form-table" role="presentation"><tbody>';
 		foreach (['pt' => 'Português (Brasil)', 'en' => 'English', 'es' => 'Español'] as $lang => $label) {
@@ -100,9 +103,9 @@ final class HTMLPress_Admin {
 			$required = !$id && $lang === 'pt';
 			$caption = $required ? __('%s (obrigatório)', 'htmlpress') : __('%s (opcional)', 'htmlpress');
 			echo '<tr><th scope="row"><label for="' . esc_attr($name) . '">' . esc_html(sprintf($caption, $label)) . '</label></th><td>';
-			echo '<input type="file" id="' . esc_attr($name) . '" name="' . esc_attr($name) . '" accept=".html,.htm,.zip" aria-describedby="htmlpress-upload-help' . ($id ? ' htmlpress-replace-help' : '') . '"' . ($required ? ' required' : '') . '></td></tr>';
+			echo '<input type="file" id="' . esc_attr($name) . '" name="' . esc_attr($name) . '" accept="' . esc_attr($accept) . '" aria-describedby="htmlpress-upload-help' . ($id ? ' htmlpress-replace-help' : '') . '"' . ($required ? ' required' : '') . '></td></tr>';
 		}
-		echo '</tbody></table><p class="submit"><button type="submit" class="button button-primary">' . esc_html__('Salvar página HTML', 'htmlpress') . '</button></p></form></div>';
+		echo '</tbody></table><p class="submit"><button type="submit" class="button button-primary">' . esc_html__('Salvar página HTMLPress', 'htmlpress') . '</button></p></form></div>';
 	}
 
 	public static function save(): void {
@@ -132,44 +135,53 @@ final class HTMLPress_Admin {
 		if (!class_exists('finfo')) self::fail(__('A validação MIME não está disponível no servidor.', 'htmlpress'));
 		$documents = [];
 		$bundles = [];
+		$types = [];
 		foreach (['pt', 'en', 'es'] as $lang) {
 			$file = $_FILES['html_' . $lang] ?? null;
 			if ($file !== null && (!is_array($file) || array_diff(['name', 'tmp_name', 'error', 'size'], array_keys($file)) || !is_scalar($file['name']) || !is_scalar($file['tmp_name']) || !is_scalar($file['error']) || !is_scalar($file['size']))) self::fail(__('Upload inválido.', 'htmlpress'));
 			if (!$file || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
-				if (!$id && $lang === 'pt') self::fail(__('Envie o arquivo HTML PT-BR. Os demais idiomas são opcionais.', 'htmlpress'));
+				if (!$id && $lang === 'pt') self::fail(__('Envie o conteúdo PT-BR. Os demais idiomas são opcionais.', 'htmlpress'));
 				continue;
 			}
 			$tmp = $file['tmp_name'] ?? '';
 			$size = is_uploaded_file($tmp) ? filesize($tmp) : false;
 			$is_zip = preg_match('/\.zip$/i', (string) $file['name']) === 1;
+			$is_php = preg_match('/\.php$/i', (string) $file['name']) === 1;
+			if ($is_php && !HTMLPress::can_upload_php()) self::fail(__('Sem permissão para enviar código PHP.', 'htmlpress'));
 			$limit = $is_zip ? HTMLPress_Bundle::MAX_TOTAL_SIZE : HTMLPress_Bundle::MAX_FILE_SIZE;
-			if ((int) ($file['error'] ?? -1) !== UPLOAD_ERR_OK || !is_uploaded_file($tmp) || $size === false || $size < 1 || $size > $limit || (int) ($file['size'] ?? 0) !== $size || !preg_match('/\.(?:html?|zip)$/i', (string) $file['name'])) self::fail(__('Envie um HTML de até 2 MB ou um ZIP de até 10 MB.', 'htmlpress'));
+			if ((int) ($file['error'] ?? -1) !== UPLOAD_ERR_OK || !is_uploaded_file($tmp) || $size === false || $size < 1 || $size > $limit || (int) ($file['size'] ?? 0) !== $size || !preg_match('/\.(?:html?|php|zip)$/i', (string) $file['name'])) self::fail(__('Envie HTML/PHP de até 2 MB ou ZIP de até 10 MB.', 'htmlpress'));
 			if ($is_zip) {
 				if (!class_exists('ZipArchive')) self::fail(__('O servidor precisa da extensão PHP zip para receber pacotes ZIP. Você ainda pode enviar HTML individual.', 'htmlpress'));
-				$files = HTMLPress_Bundle::readZip($tmp);
-				if ($files === false) self::fail(__('ZIP inválido: inclua index.html e arquivos permitidos, sem caminhos inseguros. Limites: 100 arquivos, 2 MB cada e 10 MB descompactados.', 'htmlpress'));
+				$files = HTMLPress_Bundle::readZip($tmp, HTMLPress::can_upload_php());
+				if ($files === false) self::fail(__('ZIP inválido ou não permitido: inclua index.html ou index.php (com permissão de edição de código), assets estáticos e nenhum PHP auxiliar. Limites: 100 arquivos, 2 MB cada e 10 MB descompactados.', 'htmlpress'));
+				$types[$lang] = isset($files['index.php']) ? 'php' : 'html';
+				$entry = $types[$lang] === 'php' ? 'index.php' : 'index.html';
+				$documents[$lang] = $files[$entry]['bytes'];
+				// PHP source stays in protected post metadata, never in public uploads.
+				unset($files['index.php']);
 				$bundles[$lang] = $files;
-				$documents[$lang] = $files['index.html']['bytes'];
 				continue;
 			}
 			$mime = (new finfo(FILEINFO_MIME_TYPE))->file($tmp);
-			if (!in_array($mime, ['text/html', 'text/plain', 'application/xhtml+xml'], true)) self::fail(__('Tipo de arquivo inválido.', 'htmlpress'));
+			$allowed = $is_php ? ['text/x-php', 'application/x-php', 'text/plain', 'text/html'] : ['text/html', 'text/plain', 'application/xhtml+xml'];
+			if (!in_array($mime, $allowed, true)) self::fail(__('Tipo de arquivo inválido.', 'htmlpress'));
 			$html = file_get_contents($tmp);
 			if (!is_string($html)) self::fail(__('Não foi possível ler o arquivo.', 'htmlpress'));
-			$valid = HTMLPress_Document::validate($html);
+			$valid = $is_php ? HTMLPress_PHP::validate($html) : HTMLPress_Document::validate($html);
 			if (is_wp_error($valid)) self::fail($valid->get_error_message());
 			$documents[$lang] = $html;
-			// A standalone HTML replaces any previously uploaded assets too.
+			$types[$lang] = $is_php ? 'php' : 'html';
+			// A standalone document replaces any previously uploaded assets too.
 			$bundles[$lang] = [];
 		}
-		if (!$id && !isset($documents['pt'])) self::fail(__('Selecione o arquivo HTML PT-BR.', 'htmlpress'));
+		if (!$id && !isset($documents['pt'])) self::fail(__('Selecione o conteúdo PT-BR.', 'htmlpress'));
 		$upload_dir = wp_upload_dir();
 		$result = HTMLPress::save_group($id, $title, $slug, $documents, static function (string $group_id) use ($bundles, $upload_dir): bool {
 			foreach ($bundles as $lang => $files) {
 				if (!HTMLPress_Bundle::store($upload_dir['basedir'] . '/htmlpress', $group_id, $lang, $files)) return false;
 			}
 			return true;
-		});
+		}, $types);
 		if (is_wp_error($result)) self::fail($result->get_error_message());
 		$target = $result['pt'] ?? $id;
 		wp_safe_redirect(add_query_arg('htmlpress_saved', '1', admin_url('post.php?post=' . absint($target) . '&action=edit')));
@@ -182,7 +194,7 @@ final class HTMLPress_Admin {
 
 	public static function row_actions($actions, $post) {
 		if ($post->post_type === 'page' && HTMLPress::is_managed((int) $post->ID) && HTMLPress::can_manage()) {
-		$actions['htmlpress'] = '<a href="' . esc_url(get_edit_post_link($post->ID, 'raw')) . '">' . esc_html__('Editar trio HTML', 'htmlpress') . '</a>';
+		$actions['htmlpress'] = '<a href="' . esc_url(get_edit_post_link($post->ID, 'raw')) . '">' . esc_html__('Editar HTMLPress', 'htmlpress') . '</a>';
 		}
 		return $actions;
 	}
