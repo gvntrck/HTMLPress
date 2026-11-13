@@ -12,6 +12,22 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
+require 'plugin-update-checker/plugin-update-checker.php';
+use YahnisElsts\PluginUpdateChecker\v6\PucFactory;
+
+$myUpdateChecker = PucFactory::buildUpdateChecker(
+	'https://github.com/gvntrck/HTMLPress',
+	__FILE__,
+	'htmlpress'
+);
+
+//Set the branch that contains the stable release.
+$myUpdateChecker->setBranch('master');
+
+
+
+
+
 require_once __DIR__ . '/class-htmlpress-document.php';
 require_once __DIR__ . '/class-htmlpress-php.php';
 require_once __DIR__ . '/class-htmlpress-bundle.php';
