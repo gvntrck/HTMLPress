@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HTMLPress
  * Description: Páginas HTML e PHP em português, inglês e espanhol, com assets e integração ao WordPress.
- * Version: 1.4.0
+ * Version: 1.4.1
  * Requires PHP: 8.1
  * Requires at least: 6.5
  * Text Domain: htmlpress

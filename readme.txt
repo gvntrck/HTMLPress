@@ -1,4 +1,4 @@
-HTMLPress 1.4.0
+HTMLPress 1.4.1
 ==============
 
 Requisitos: WordPress 6.5+, PHP 8.1+ e finfo. Para ZIP, habilite ZipArchive. Ative links permanentes amigáveis.
